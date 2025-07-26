@@ -14,7 +14,7 @@
  */
 export function includeTextBlock(text: string): string {
   // Find the include-text-block directive in the page.
-  const insertBlockRegExp = /@include-text-block\s+([^\s]+)(?:\s+(\w+))?/g;
+  const insertBlockRegExp:RegExp = /@include-text-block\s+([^\s]+)(?:\s+(\w+))?/g;
 
   // Insert the code blocks
   return text.replace(insertBlockRegExp, replaceTextBlock);
@@ -22,7 +22,7 @@ export function includeTextBlock(text: string): string {
 
 // replaceTextBlock does that actual replacement work with the result
 // of the matched RegExp.
-function replaceTextBlock(_fullMatch, filePath):string {
+function replaceTextBlock(_fullMatch: string, filePath:string):string {
   let fileContent:string = '';
   try {
     fileContent = Deno.readTextFileSync(filePath);

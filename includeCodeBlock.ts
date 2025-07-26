@@ -9,12 +9,12 @@
  * The generate code block uses the `~~~` sequence to delimit the block
  * with the language name provided in the opening delimiter.
  *
- * @param {*} text (string) to be transformed
+ * @param text (string) to be transformed
  * @returns the transformed text as a string
  */
-export function includeCodeBlock(text) {
+export function includeCodeBlock(text: string):string {
   // Find the include-code-block directive in the page. 
-  const insertBlockRegExp = /@include-code-block\s+([^\s]+)(?:\s+(\w+))?/g;
+  const insertBlockRegExp: RegExp = /@include-code-block\s+([^\s]+)(?:\s+(\w+))?/g;
 
   // Insert the code blocks
   return text.replace(insertBlockRegExp, replaceCodeBlock);
@@ -22,21 +22,12 @@ export function includeCodeBlock(text) {
 
 // replaceCodeBlock does that actual replacement work with the result
 // of the matched RegExp.
-function replaceCodeBlock(_fullMatch, filePath, language = "") {
-  const fileContent = Deno.readTextFileSync(filePath);
+function replaceCodeBlock(_fullMatch:string, filePath: string, language:string = ""): string {
+  const fileContent:string = Deno.readTextFileSync(filePath);
   if (fileContent) {
     return "~~~" + language + "\n" + fileContent + "\n~~~";
   } else {
     console.error(`Error inserting block from ${filePath}`);
     return `@include-code-block ${filePath} ${language}`;
   }
-}
-
-if (import.meta.main) {
-    const text = includeCodeBlock(`HelloWorld with include-code-block
-
-@include-code-block helloworld.md Markdown
-
-`); 
-  console.log(text);
 }

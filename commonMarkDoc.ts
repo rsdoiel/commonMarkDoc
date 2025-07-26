@@ -4,27 +4,28 @@
  * function so it can be used as a standalone processor.
  */
 import * as yaml from "@std/yaml";
-import { parseArgs } from "@std/flags/parseArgs";
+import { parse as parseArgs } from "@std/flags";
 
-import { version, releaseDate, releaseHash, licenseText } from "./version.ts";
-import { helpText } from "./helptext.ts";
+import { licenseText, releaseDate, releaseHash, version } from "./version.ts";
+import { fmtHelp, helpText } from "./helptext.ts";
 
-import { extractTags} from "./extractTags.ts";
-import { markdownLinkToHTML } from "./markdownLinkToHTML.ts";
+import { extractTags, mergeTags } from "./extractTags.ts";
 import { includeCodeBlock } from "./includeCodeBlock.ts";
 import { includeTextBlock } from "./includeTextBlock.ts";
 
 export class CommonMarkDoc {
-  frontMatter: Record<string,unknown> = {};
+  frontMatter: Record<string, unknown> = {};
   content: string = "";
 
   // Parse a CommonMark or Markdown document into content and front matter
-  parse(text:string) {
-    const frontMatterRegex = /^---([\s\S]+?)---/;
-    const match = text.match(frontMatterRegex);
+  parse(text: string) {
+    const frontMatterRegex: RegExp = /^---([\s\S]+?)---/;
+    const match: Array<string> | null = text.match(frontMatterRegex) as Array<
+      string
+    >;
 
     if (match) {
-      this.frontMatter = yaml.parse(match[1]);
+      this.frontMatter = yaml.parse(match[1]) as Record<string, unknown>;
       this.content = text.slice(match[0].length).trim();
     } else {
       this.frontMatter = {};
@@ -50,7 +51,7 @@ ${this.content}`;
   // access or lots of included code blocks this will raise the execution time of this method.
   //
   // If a code block can't be read it will leave the `@include-code-block` text in place.
-  async process() {
+  process() {
     // Clone a copy of this object.
     const cmark: CommonMarkDoc = new Object(this) as CommonMarkDoc;
 
@@ -58,94 +59,83 @@ ${this.content}`;
     cmark.content = includeTextBlock(cmark.content);
 
     // Extract any HashTags from content
-    const hashTags: Set<string> = extractTags(cmark.content, "#");
-    const atTags: Set<string> = extractTags(cmark.content, "@");
+    const hashTags: string[] = extractTags(cmark.content, "#");
+    const atTags: string[] = extractTags(cmark.content, "@");
 
     // Process our HashTags adding them to our keywords list
     if (
       cmark.frontMatter.hashTags === undefined ||
       cmark.frontMatter.hashTags === null
     ) {
-      cmark.frontMatter.hashTags = Set<string>;
+      cmark.frontMatter.hashTags = [];
     }
-    cmark.frontMatter.hashTags = {...cmark.frontMatter.hashTags as Set<string>, ...hashTags};
+    cmark.frontMatter.hashTags = mergeTags(cmark.frontMatter.hashTags as string[], hashTags);
 
     // Process our @Tags and add them to an AtTag list.
     if (
       cmark.frontMatter.atTags === undefined ||
       cmark.frontMatter.atTags === null
     ) {
-      cmark.frontMatter.atTags = Set<string>;
+      cmark.frontMatter.atTags = [];
     }
-    cmark.frontMatter.atTags = {...cmark.frontMatter.atTags as Set<string>, ...atTags};
+    cmark.frontMatter.atTags = mergeTags(cmark.frontMatter.atTags as string[], atTags);
 
     // Handle include code blocks
     cmark.content = includeCodeBlock(cmark.content);
-    
+
     // We can now return the revised object.
     return cmark;
   }
 }
 
 async function main() {
-    const appName = 'cmarkprocess';
-    const args = parseArgs(Deno.args, {
-      boolean: [ "help", "version", "license"],
-      alias: {
-        h: "help",
-        v: "version",
-        l: "license",
-      }
-    });
+  const appName = "cmarkprocess";
+  const args = parseArgs(Deno.args, {
+    boolean: ["help", "version", "license"],
+    alias: {
+      h: "help",
+      v: "version",
+      l: "license",
+    },
+  });
 
-    if (args.help) {
-      console.log(fmtHelp(helpText, appName, version, releaseDate, releaseHash));
-      Deno.exit(0);
+  if (args.help) {
+    console.log(fmtHelp(helpText, appName, version, releaseDate, releaseHash));
+    Deno.exit(0);
+  }
+
+  if (args.version) {
+    console.log(`${appName} ${version} ${releaseHash}`);
+    Deno.exit(0);
+  }
+
+  if (args.license) {
+    console.log(licenseText);
+    Deno.exit(0);
+  }
+
+  const cmark = new CommonMarkDoc();
+  const filePath = args._[0] as string;
+  let text: string = "";
+  if (args._.length === 0) {
+    const decoder = new TextDecoder();
+    for await (const chunk of Deno.stdin.readable) {
+      text += decoder.decode(chunk);
     }
-
-    if (args.version) {
-      console.log(`${appName} ${version} ${releaseHash}`);
-      Deno.exit(0);
-    }
-
-    if (args.lecense) {
-      console.log(licenseText);
-      Deno.exit(0);
-    }
-
-    if (args.length !== 1) {
-        console.log(`USAGE: ${appName} COMMONMARK_FILE
-    
-    This program will process an CommonMark document interpreting 
-    the following additional markup.
-
-    - HashTags are identified and added to the front matter
-    - @Tags are identified and added to the front matter
-    - Text blocks can be included with the \`@include-text-block FILENAME\` syntax
-    - Code blocks can be included wiht the \`@include-code-block FILENAME LANGUAGE\` syntax
-    - Links to Markdown documents are transformed to links to HTML documents with the same basename
-
-    Options:
-
-    -h, --help
-    : display help
-
-    -l, --license
-    : display license
-
-    -v, --version
-    : display version
-
-`);
-        Deno.exit(1);
-    }
-    const cmark = new CommonMarkDoc();
-    const text = await Deno.readTextFile(args[0]);
-    cmark.parse(text);
+  } else {
+    text = await Deno.readTextFile(filePath);
+  }
+  cmark.parse(text);
+  try {
     await cmark.process();
-    console.log(cmark.stringify());
+  } catch (error) {
+    console.error(`ERROR (${filePath}): ${error}`);
+    Deno.exit(1);
+  }
+  const output = cmark.stringify();
+  console.log(output);
 }
 
 if (import.meta.main) {
-    await main();
+  await main();
 }

@@ -1,21 +1,21 @@
 /**
- * includeCodeBlock_test.js - this is a test program for the includeCodeBlock.js module.
+ * includeCodeBlock_test.ts - this is a test program for the includeCodeBlock.js module.
  */
 
 import { assertEquals } from "@std/assert";
 
-import { includeCodeBlock } from "./includeCodeBlock.js";
+import { includeCodeBlock } from "../includeCodeBlock.ts";
 
 Deno.test('test includeCodeBlock function', () => {
     const helloworldText = `
 
 This is Hello World, included as CommonMark text.
 
-@include-code-block helloworld.md Markdown
+@include-code-block test/helloworld.md Markdown
 
 And now include helloworld2.md. It'll be the second \`@include-code-block\` FILENAME LANGAUGE.
 
-@include-code-block helloworld2.md Markdown
+@include-code-block test/helloworld2.md Markdown
 `;
     const expected = `
 
