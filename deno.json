@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "build": "deno compile --allow-read -o bin/cmarkprocess commonMarkDoc.ts",
+    "build": "deno compile --allow-read -o bin/cmarkprocess mod.ts",
     "test": "deno test --allow-read test"
   },
   "imports": {

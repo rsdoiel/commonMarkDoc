@@ -1,10 +1,29 @@
 /**
+ * commonMarkDoc is a Deno TypeScript module for working with CommonMark documents.
+ * Copyright (C) 2025 R. S. Doiel
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * 
+ * @contact: rsdoiel@gmail.com
+ * @issues: https://github.com/rsdoiel/commonMarkDoc/issues
+ * 
  * includeTextBlock_test.ts - this is a test program for the includeTextBlock.js module.
  */
 
 import { assertEquals } from "@std/assert";
 
-import { includeTextBlock } from "../includeTextBlock.ts";
+import { includeTextBlock } from "../src/includeTextBlock.ts";
 
 Deno.test('test includeTextBlock function', () => {
     const helloworldText = `
