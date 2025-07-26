@@ -20,6 +20,13 @@ atTags:
   - '@include'
   - '@Tags'
   - '@tag'
+dateCreated: '2025-07-26'
+dateModified: defaults.yaml
+datePublished: defaults.yaml
+author: R. S. Doiel
+copyrightYear: 2025
+copyrightHolder: R. S. Doiel
+license: 'https://creativecommons.org/licenses/by-sa/4.0/'
 ---
 
 # Building a cmarkprocess
