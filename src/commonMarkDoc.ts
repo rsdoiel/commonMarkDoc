@@ -32,6 +32,7 @@ import { includeTextBlock } from "./includeTextBlock.ts";
 export class CommonMarkDoc {
   frontMatter: Record<string, unknown> = {};
   content: string = "";
+  changed: boolean = false;
 
   // Parse a CommonMark or Markdown document into content and front matter
   parse(text: string) {
@@ -98,7 +99,21 @@ ${this.content}`;
 
     // Handle include code blocks
     cmark.content = includeCodeBlock(cmark.content);
-
+   
+    // Update the front matter to reflect the changes.
+    cmark.changed = true;
+    // default created and modified to today.
+    const today = (new Date()).toISOString().split('T')[0]
+    cmark.frontMatter.dateCreated = today;
+    cmark.frontMatter.dateModified = today;
+    if (this.frontMatter.dateCreated) {
+      cmark.frontMatter.dateCreated = this.frontMatter.dateCreated;
+    }
+    if (this.frontMatter.datePublished) {
+      cmark.frontMatter.datePublished = this.frontMatter.datePublished;
+    } else {
+      cmark.frontMatter.draft = true;
+    }
     // We can now return the revised object.
     return cmark;
   }

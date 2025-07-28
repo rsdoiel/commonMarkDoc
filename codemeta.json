@@ -12,28 +12,28 @@
     }
   ],
   "dateCreated": "2025-07-26",
-  "dateModified": "2025-07-26",
-  "datePublished": "2025-07-26",
-  "description": "This is a JavaScript module for working with CommonMark documents. It assumes that the runtime environment is Deno 2.4.2 or better.",
+  "dateModified": "2025-07-28",
+  "datePublished": "2025-07-28",
+  "description": "This is a TypeScript module for working with CommonMark documents. It assumes that the runtime environment is Deno 2.4.2 or better.",
   "keywords": [
     "CommonMark",
-    "JavaScript"
+    "TypeScritp"
   ],
   "name": "commonMarkDoc",
   "license": "https://www.gnu.org/licenses/agpl-3.0.txt",
   "programmingLanguage": [
-    "JavaScript"
+    "TypeScript"
   ],
   "runtimePlatform": "Deno >= 2.4.2",
   "softwareRequirements": [
     "Deno >= 2.4.2",
-    "CMTools >= 0.0.36"
+    "CMTools >= 0.0.37"
   ],
   "softwareSuggestions": [
     "Pandoc >= 3.1"
   ],
-  "version": "0.0.1",
-  "developmentStatus": "concept",
+  "version": "0.0.2",
+  "developmentStatus": "wip",
   "issueTracker": "https://github.com/rsdoiel/commonMarkDoc/issues",
   "releaseNotes": "This is a working proof of concept of a CommonMark document module and processor.",
   "copyrightYear": 2025,

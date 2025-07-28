@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <title>commonMarkDoc</title>
+    <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav>
+<ul>
+    <li><a href="/">Home</a></li>
+    <li><a href="index.html">README</a></li>
+    <li><a href="LICENSE">LICENSE</a></li>
+    <li><a href="INSTALL.html">INSTALL</a></li>
+    <li><a href="user_manual.html">User Manual</a></li>
+    <li><a href="about.html">About</a></li>
+    <li><a href="search.html">Search</a></li>
+    <li><a href="https://github.com/rsdoiel/commonMarkDoc">GitHub</a></li>
+</ul>
+</nav>
+<section>
+<h1 id="name">NAME</h1>
+<p>cmarkprocess</p>
+<h1 id="synopsis">SYNOPSIS</h1>
+<p>cmarkprocess <a href="#options">OPTIONS</a> COMMONMARK_FILE</p>
+<h1 id="description">DESCRIPTION</h1>
+<p>cmarkprocess is a CommonMark processor. It accepts CommonMark and
+renders CommonMark to standard out. It implements a series of tranforms
+operating both on the CommonMark content and front matter that maybe
+included. The transforms are as follows</p>
+<dl>
+<dt><code>@include-text-block</code>
+<code>FILENAME CLASSNAME</code></dt>
+<dd>
+This willl include the contents of FILENAME in the output of the
+CommonMark document.
+</dd>
+<dt><code>@include-code-block</code>
+<code>FILENAME [LANGUAGE]</code></dt>
+<dd>
+This will read in a source code file and create a CommonMark code block.
+</dd>
+<dt>HashTags and <code>@Tags</code></dt>
+<dd>
+The content of the CommonMark document will be scanned for these and
+they will be added to the front matter as <code>hashTags</code> and
+<code>atTags</code>.
+</dd>
+</dl>
+<h1 id="options">OPTIONS</h1>
+<p>Options come as the last parameter(s) on the command line.</p>
+<dl>
+<dt>-h, –help</dt>
+<dd>
+display help
+</dd>
+<dt>-v, –version</dt>
+<dd>
+display version
+</dd>
+<dt>-l, –license</dt>
+<dd>
+display license
+</dd>
+</dl>
+<h1 id="examples">EXAMPLES</h1>
+<p>Here’s an example of a CommonMark document called
+<code>helloworld.md</code>.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode markdown"><code class="sourceCode markdown"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> 3rd Hello World</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu"># Third Markdown file.</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>Hello #again!!!! I hope you are a @person!!</span></code></pre></div>
+<p>We can process it with the following Deno command.</p>
+<pre class="shell"><code>deno run --allow-read commonMarkDoc.js helloworld.md</code></pre>
+<p>The transformation will be written to standard out.</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode markdown"><code class="sourceCode markdown"></code></pre></div>
+</section>
+</body>
+</html>

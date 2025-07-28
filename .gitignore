@@ -5,3 +5,4 @@
 man/*
 bin/*
 dist/*
+deno-tasks.json

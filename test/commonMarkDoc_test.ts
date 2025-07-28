@@ -34,7 +34,7 @@ Hello World!!! @somebody.org #HelloWorld
 
 @include-text-block test/helloworld3.md
 
-@include-code-block extractTags.ts JavaScript
+@include-code-block src/extractTags.ts JavaScript
 
 `;
 

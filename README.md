@@ -2,13 +2,13 @@
 
 # commonMarkDoc
 
-This is a JavaScript module for working with CommonMark documents. It assumes that the runtime environment is Deno 2.4.2 or better.
+This is a TypeScript module for working with CommonMark documents. It assumes that the runtime environment is Deno 2.4.2 or better.
 
 ## Release Notes
 
-- version: 0.0.1
-- status: concept
-- released: 2025-07-26
+- version: 0.0.2
+- status: wip
+- released: 2025-07-28
 
 This is a working proof of concept of a CommonMark document module and processor.
 
@@ -22,7 +22,7 @@ This is a working proof of concept of a CommonMark document module and processor
 ## Software Requirements
 
 - Deno &gt;&#x3D; 2.4.2
-- CMTools &gt;&#x3D; 0.0.36
+- CMTools &gt;&#x3D; 0.0.37
 
 ### Software Suggestions
 
@@ -30,7 +30,7 @@ This is a working proof of concept of a CommonMark document module and processor
 
 #### Runtime platform
 
-Deno &gt;&#x3D; 2.4.2**
+**Deno &gt;&#x3D; 2.4.2**
 
 ## Related resources
 

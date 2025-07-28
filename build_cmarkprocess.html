@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <title>commonMarkDoc</title>
+    <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav>
+<ul>
+    <li><a href="/">Home</a></li>
+    <li><a href="index.html">README</a></li>
+    <li><a href="LICENSE">LICENSE</a></li>
+    <li><a href="INSTALL.html">INSTALL</a></li>
+    <li><a href="user_manual.html">User Manual</a></li>
+    <li><a href="about.html">About</a></li>
+    <li><a href="search.html">Search</a></li>
+    <li><a href="https://github.com/rsdoiel/commonMarkDoc">GitHub</a></li>
+</ul>
+</nav>
+<section>
+<h1 id="building-a-commonmark-processor-in-denotypescript">Building a
+CommonMark Processor in Deno+TypeScript</h1>
+<p>By R. S. Doiel, 2025-07-26</p>
+<p>CommonMark and Markdown are easier to proof read and edit than HTML.
+CommonMark is a super set of John Grubber’s original Markdown. It
+incorporates common practices and extensions to the original Markdown.
+I’ve found over the years the “Markdown” I type is really “CommonMark”.
+I use <a href="https://pandoc.org">Pandoc</a> for processing my
+CommonMark documents into HTML. There are a few transforms I’d like to
+make before I send the text off to Pandoc. That is what I’ll be
+covering.</p>
+<p>My CommonMark Processor will be responsible for several things. The
+features I miss are simple. Here’s the short list.</p>
+<ul>
+<li>support <code>@include-code-block</code> for including code samples
+as code blocks</li>
+<li>support <code>@include-text-block</code> for include plain text into
+a CommonMark document</li>
+<li>transform Hashtags into front matter</li>
+<li>transform web Mentions into front matter</li>
+</ul>
+<p>My homepage is built from a sequence of plain text files. I also
+commonly need to include source code in my blog posts. That has lead me
+to think about an include mechanisms. A source file should be included
+in a CommonMark code block while plain text can be included as is.</p>
+<p>The include blocks, text and code, can also be detected through
+regular expression. The difference for those is they require reading
+files from disk. That needs to be handled.</p>
+<p>Here’s the syntax I’d use for code block and included texts.</p>
+<blockquote>
+<p><code>@include-code-block</code> <code>FILEPATH [LANGUAGE]</code></p>
+</blockquote>
+<blockquote>
+<p><code>@include-text-block</code> <code>FILEPATH</code></p>
+</blockquote>
+<p>Finally I’d to add support for <a
+href="https://en.wikipedia.org/wiki/Hashtag">Hashtags</a> and web <a
+href="https://en.wikipedia.org/wiki/Mention_(blogging)">Mentions</a>. I
+want to explore integrating both with facets in search results, for that
+I’ll need to track them in the front matter. Overtime I’ll explore new
+features. The <code>commonMarkDoc.ts</code> module needs to be simple to
+extend.</p>
+<p>How do I extract Hashtags and Mentions? Both are function similar
+though are used for different purposes. A regular expression should be
+suitable to pick them out. The difference between extracting a Hashtag
+or a Mention is the prefix, “#” or “@”. A function that code use the
+supplied text and prefix could return a list of tagged results.</p>
+<p>I want to easily extend the processor. I can create modules based on
+the transforms I need. Each module will include a function that
+implements the transform. The <code>process</code> method will be
+responsible for sequencing the transforms and updating the CommonMark
+object with the results.</p>
+<p>What do I need in my CommonMark document object? I need to take the
+markup, parse it and have the object holding the CommonMark document
+split into front matter and content. Similarly I will need to reassemble
+the parts into back into a CommonMark text. Those functions will be
+called <code>parse</code> and <code>stringify</code>. These names are
+idiomatic in JavaScript and TypeScript. The object type will be called
+<code>CommonMarkDoc</code>.</p>
+<p>Here is the basic outline of the <code>CommonMarkDoc</code> object
+without the <code>process</code> method.</p>
+<p><span class="citation"
+data-cites="include-code-block">@include-code-block</span>
+commonMarkDoc_v1.ts TypeScript</p>
+<p>This object makes it easy to work the front matter and the main
+content parts of a CommonMark document. The <code>parse</code> and
+<code>stringify</code> methods can bookend the <code>process</code>
+method implementing the transform sequence. This provides the
+functionality needed to implement a CommonMark Processor.</p>
+<p>The <code>process</code> method will evolve overtime. I need to
+minimize its complexity. The <code>process</code> method is only
+responsible for sequencing the transforms defined in their own
+modules.</p>
+<h2 id="inclusion-mechanisms">Inclusion mechanisms</h2>
+<p>Before writing the <code>process</code> method I will work through
+the transform modules.</p>
+<p>I need two inclusion mechanisms. One will support plain text file
+inclusion. The other will wrap the included file in the CommonMark
+markup for code blocks. Here’s the syntax I want to use in my CommonMark
+document.</p>
+<blockquote>
+<p><code>@include-text-block</code> <code>FILENAME</code></p>
+</blockquote>
+<blockquote>
+<p><code>@include-code-block</code> <code>FILENAME LANGUAGE</code></p>
+</blockquote>
+<p>Each of these will be implemented in their own module. Let’s look at
+the one for <code>@include-text-block</code>. Here’s what the include
+text module looks like.</p>
+<p><span class="citation"
+data-cites="include-code-block">@include-code-block</span>
+includeTextBlock.ts TypeScript</p>
+<p>The public function handles finding the file referenced, reading it
+into a string before including it the transformed content block. Let’s
+look at the one for <code>@include-code-block</code>.</p>
+<p><span class="citation"
+data-cites="include-code-block">@include-code-block</span>
+includeCodeBlock.ts TypeScript</p>
+<p>These modules are very similar. I’ve implemented them as separate
+modules because I want the option of evolving them independently. I
+don’t want to entangled the two functions unnecessarily. Keeping both
+simple in separate modules aligns with that.</p>
+<h2 id="hashtags-and-mentions">Hashtags and Mentions</h2>
+<p>The other transforms needed in the <code>process</code> method are
+extracting the Hashtags and Mentions which will be used to update the
+front matter. Both Hashtags and Mentions are similar. They have a
+prefix, “#” or “@” followed by a sequence of alphanumeric characters,
+period and underscores. Trailing periods are stripped. They should be
+kept separate in the front matter. Each plays different content
+roles.</p>
+<p>Collecting tags in the text is easy using a regular expression. I
+have to make a choice about the resulting list. One approach would just
+be list a tag each time it is encountered. This will result in repeated
+tags. That can be problematic. Instead I would like the list of tags
+returned to be a unique list. The extraction function will need a
+parameter for the source text and the prefix. It should return a list of
+unique tags. I’m going to call this function,
+<code>extractTags</code>.</p>
+<p>As I collect tags I will need an ability to merge the unique tag.
+That suggestions a merge function. That function will take one or more
+lists of tags and return a single list of unique tags. I’m going to call
+these function <code>mergeTags</code>. Both relate to tags and exist
+because of extraction. I’ll put them in a module called
+<code>extractTags.ts</code>. Here is my implementation.</p>
+<p><span class="citation"
+data-cites="include-code-block">@include-code-block</span>
+extractTags.ts TypeScript</p>
+<h2 id="the-process-method">The <code>process</code> method</h2>
+<p>I have the set of transforms I want. I will need to sequence them in
+the <code>process</code> method. Here is a look at the internals of the
+<code>process</code> method.</p>
+<p><span class="citation"
+data-cites="include-code-block">@include-code-block</span>
+process_method.txt TypeScript</p>
+<p>To use the the transform functions in the <code>process</code> method
+I need to import them.</p>
+<p><span class="citation"
+data-cites="include-code-block">@include-code-block</span>
+import_block.txt TypeScript</p>
+<h2 id="the-complete-commonmark-processor-module">The complete
+CommonMark processor module</h2>
+<p>Here is the complete <code>commonMarkDoc.ts</code> module.</p>
+<p><span class="citation"
+data-cites="include-code-block">@include-code-block</span>
+commonMarkDoc_v2.ts TypeScript</p>
+<h2 id="the-commonmark-processor-application">The CommonMark processor
+application</h2>
+<p>To use this module I need to wrap it so I can execute it from the
+command line. My processor is going to be called
+<code>cmarkprocess</code> so I’ll name the module that becomes the
+command line program is <code>cmarkprocess.ts</code>. This module will
+include a “main” function, that function will handle command line
+options and parameters as well as read data from either standard input
+or a file. It’ll use the <code>CommonMarkDoc</code> <code>process</code>
+method and write the results to standard out.</p>
+<p><span class="citation"
+data-cites="include-code-block">@include-code-block</span>
+cmarkprocess.ts TypeScript</p>
+<p>Now that we have our wrapping modules, how do I get a nice executable
+using Deno?</p>
+<pre class="shell"><code>deno compile --allow-read -o bin/cmarkprocess cmarkprocess.ts</code></pre>
+<p>The result is an executable, <code>bin/cmarkprocess</code>. This
+executable can read from standard input or from a file path. It will
+write to standard output.</p>
+</section>
+</body>
+</html>
