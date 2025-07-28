@@ -84,8 +84,8 @@ website: $(HTML_PAGES) .FORCE
 	make -f website.mak
 	cd tutorial && make -f website.mak
 
-#publish: website .FORCE
-#	./publish.bash
+publish: website .FORCE
+	./publish.bash
 
 htdocs: .FORCE
 	deno task htdocs
