@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <title>commonMarkDoc</title>
+    <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav>
+<ul>
+    <li><a href="../">Home</a></li>
+    <li><a href="../index.html">README</a></li>
+    <li><a href="../LICENSE">LICENSE</a></li>
+    <li><a href="../INSTALL.html">INSTALL</a></li>
+    <li><a href="../user_manual.html">User Manual</a></li>
+    <li><a href="../about.html">About</a></li>
+    <li><a href="../search.html">Search</a></li>
+    <li><a href="https://github.com/rsdoiel/commonMarkDoc">GitHub</a></li>
+</ul>
+</nav>
+<section>
+<h1 id="building-a-commonmark-processor-in-denotypescript">Building a
+CommonMark Processor in Deno+TypeScript</h1>
+<p>By R. S. Doiel, 2025-07-26</p>
+<p>CommonMark and Markdown are easier to proof read and edit than HTML.
+CommonMark is a super set of John Grubber’s original Markdown. It
+incorporates common practices and extensions to the original Markdown.
+I’ve found over the years the “Markdown” I type is really “CommonMark”.
+I use <a href="https://pandoc.org">Pandoc</a> for processing my
+CommonMark documents into HTML. There are a few transforms I’d like to
+make before I send the text off to Pandoc. That is what I’ll be
+covering.</p>
+<p>My CommonMark Processor will be responsible for several things. The
+features I miss are simple. Here’s the short list.</p>
+<ul>
+<li>support <code>@include-code-block</code> for including code samples
+as code blocks</li>
+<li>support <code>@include-text-block</code> for include plain text into
+a CommonMark document</li>
+<li>transform Hashtags into front matter</li>
+<li>transform web Mentions into front matter</li>
+</ul>
+<p>My homepage is built from a sequence of plain text files. I also
+commonly need to include source code in my blog posts. That has lead me
+to think about an include mechanisms. A source file should be included
+in a CommonMark code block while plain text can be included as is.</p>
+<p>The include blocks, text and code, can also be detected through
+regular expression. The difference for those is they require reading
+files from disk. That needs to be handled.</p>
+<p>Here’s the syntax I’d use for code block and included texts.</p>
+<blockquote>
+<p><code>@include-code-block</code> <code>FILEPATH [LANGUAGE]</code></p>
+</blockquote>
+<blockquote>
+<p><code>@include-text-block</code> <code>FILEPATH</code></p>
+</blockquote>
+<p>Finally I’d to add support for <a
+href="https://en.wikipedia.org/wiki/Hashtag">Hashtags</a> and web <a
+href="https://en.wikipedia.org/wiki/Mention_(blogging)">Mentions</a>. I
+want to explore integrating both with facets in search results, for that
+I’ll need to track them in the front matter. Overtime I’ll explore new
+features. The <code>commonMarkDoc.ts</code> module needs to be simple to
+extend.</p>
+<p>How do I extract Hashtags and Mentions? Both are function similar
+though are used for different purposes. A regular expression should be
+suitable to pick them out. The difference between extracting a Hashtag
+or a Mention is the prefix, “#” or “@”. A function that code use the
+supplied text and prefix could return a list of tagged results.</p>
+<p>I want to easily extend the processor. I can create modules based on
+the transforms I need. Each module will include a function that
+implements the transform. The <code>process</code> method will be
+responsible for sequencing the transforms and updating the CommonMark
+object with the results.</p>
+<p>What do I need in my CommonMark document object? I need to take the
+markup, parse it and have the object holding the CommonMark document
+split into front matter and content. Similarly I will need to reassemble
+the parts into back into a CommonMark text. Those functions will be
+called <code>parse</code> and <code>stringify</code>. These names are
+idiomatic in JavaScript and TypeScript. The object type will be called
+<code>CommonMarkDoc</code>.</p>
+<p>Here is the basic outline of the <code>CommonMarkDoc</code> object
+without the <code>process</code> method.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">/**</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co"> * commonMarkDoc is a Deno TypeScript module for working with CommonMark documents.</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"> * Copyright (C) 2025 R. S. Doiel</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co"> * This program is free software: you can redistribute it and/or modify</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"> * it under the terms of the GNU Affero General Public License as published by</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co"> * the Free Software Foundation, either version 3 of the License, or</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="co"> * (at your option) any later version.</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="co"> * This program is distributed in the hope that it will be useful,</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="co"> * but WITHOUT ANY WARRANTY; without even the implied warranty of</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co"> * GNU Affero General Public License for more details.</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="co"> * You should have received a copy of the GNU Affero General Public License</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="co"> * along with this program.  If not, see </span><span class="kw">&lt;https:</span><span class="ot">//www.gnu.org/licenses</span><span class="kw">/&gt;</span><span class="co">.</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@contact:</span><span class="co"> rsdoiel</span><span class="an">@gmail.com</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@issues:</span><span class="co"> https://github.com/rsdoiel/commonMarkDoc/issues</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="co"> */</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> <span class="op">*</span> <span class="im">as</span> yaml <span class="im">from</span> <span class="st">&quot;@std/yaml&quot;</span><span class="op">;</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { extractTags<span class="op">,</span> mergeTags } <span class="im">from</span> <span class="st">&quot;./extractTags.ts&quot;</span><span class="op">;</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { includeCodeBlock } <span class="im">from</span> <span class="st">&quot;./includeCodeBlock.ts&quot;</span><span class="op">;</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { includeTextBlock } <span class="im">from</span> <span class="st">&quot;./includeTextBlock.ts&quot;</span><span class="op">;</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a><span class="im">export</span> <span class="kw">class</span> CommonMarkDoc {</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>  frontMatter<span class="op">:</span> <span class="bu">Record</span><span class="op">&lt;</span><span class="dt">string</span><span class="op">,</span> <span class="dt">unknown</span><span class="op">&gt;</span> <span class="op">=</span> {}<span class="op">;</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>  content<span class="op">:</span> <span class="dt">string</span> <span class="op">=</span> <span class="st">&quot;&quot;</span><span class="op">;</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Parse a CommonMark or Markdown document into content and front matter</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">parse</span>(text<span class="op">:</span> <span class="dt">string</span>) {</span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> frontMatterRegex<span class="op">:</span> <span class="bu">RegExp</span> <span class="op">=</span> <span class="ss">/</span><span class="sc">^</span><span class="ss">---</span><span class="sc">([\s\S]+?)</span><span class="ss">---/</span><span class="op">;</span></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> match<span class="op">:</span> <span class="bu">Array</span><span class="op">&lt;</span><span class="dt">string</span><span class="op">&gt;</span> <span class="op">|</span> <span class="dt">null</span> <span class="op">=</span> text<span class="op">.</span><span class="fu">match</span>(frontMatterRegex) <span class="im">as</span> <span class="bu">Array</span><span class="op">&lt;</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a>      string</span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>    <span class="op">&gt;;</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (match) {</span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a>      <span class="kw">this</span><span class="op">.</span><span class="at">frontMatter</span> <span class="op">=</span> yaml<span class="op">.</span><span class="fu">parse</span>(match[<span class="dv">1</span>]) <span class="im">as</span> <span class="bu">Record</span><span class="op">&lt;</span><span class="dt">string</span><span class="op">,</span> <span class="dt">unknown</span><span class="op">&gt;;</span></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>      <span class="kw">this</span><span class="op">.</span><span class="at">content</span> <span class="op">=</span> text<span class="op">.</span><span class="fu">slice</span>(match[<span class="dv">0</span>]<span class="op">.</span><span class="at">length</span>)<span class="op">.</span><span class="fu">trim</span>()<span class="op">;</span></span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>      <span class="kw">this</span><span class="op">.</span><span class="at">frontMatter</span> <span class="op">=</span> {}<span class="op">;</span></span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>      <span class="kw">this</span><span class="op">.</span><span class="at">content</span> <span class="op">=</span> text<span class="op">;</span></span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Return this object as a CommonMark document with front matter and content.</span></span>
+<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stringify</span>()<span class="op">:</span> <span class="dt">string</span> {</span>
+<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="bu">Object</span><span class="op">.</span><span class="fu">keys</span>(<span class="kw">this</span><span class="op">.</span><span class="at">frontMatter</span>)<span class="op">.</span><span class="at">length</span> <span class="op">&gt;</span> <span class="dv">0</span>) {</span>
+<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> <span class="vs">`---</span></span>
+<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a><span class="sc">${</span>yaml<span class="op">.</span><span class="fu">stringify</span>(<span class="kw">this</span><span class="op">.</span><span class="at">frontMatter</span>)<span class="sc">}</span><span class="vs">---</span></span>
+<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a><span class="sc">${</span><span class="kw">this</span><span class="op">.</span><span class="at">content</span><span class="sc">}</span><span class="vs">`</span><span class="op">;</span></span>
+<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb1-56"><a href="#cb1-56" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="kw">this</span><span class="op">.</span><span class="at">content</span><span class="op">;</span></span>
+<span id="cb1-57"><a href="#cb1-57" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb1-58"><a href="#cb1-58" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb1-59"><a href="#cb1-59" aria-hidden="true" tabindex="-1"></a></span></code></pre></div>
+<p>This object makes it easy to work the front matter and the main
+content parts of a CommonMark document. The <code>parse</code> and
+<code>stringify</code> methods can bookend the <code>process</code>
+method implementing the transform sequence. This provides the
+functionality needed to implement a CommonMark Processor.</p>
+<p>The <code>process</code> method will evolve overtime. I need to
+minimize its complexity. The <code>process</code> method is only
+responsible for sequencing the transforms defined in their own
+modules.</p>
+<h2 id="inclusion-mechanisms">Inclusion mechanisms</h2>
+<p>Before writing the <code>process</code> method I will work through
+the transform modules.</p>
+<p>I need two inclusion mechanisms. One will support plain text file
+inclusion. The other will wrap the included file in the CommonMark
+markup for code blocks. Here’s the syntax I want to use in my CommonMark
+document.</p>
+<blockquote>
+<p><code>@include-text-block</code> <code>FILENAME</code></p>
+</blockquote>
+<blockquote>
+<p><code>@include-code-block</code> <code>FILENAME LANGUAGE</code></p>
+</blockquote>
+<p>Each of these will be implemented in their own module. Let’s look at
+the one for <code>@include-text-block</code>. Here’s what the include
+text module looks like.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">/**</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="co"> * commonMarkDoc is a Deno TypeScript module for working with CommonMark documents.</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="co"> * Copyright (C) 2025 R. S. Doiel</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co"> * This program is free software: you can redistribute it and/or modify</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co"> * it under the terms of the GNU Affero General Public License as published by</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"> * the Free Software Foundation, either version 3 of the License, or</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co"> * (at your option) any later version.</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co"> * This program is distributed in the hope that it will be useful,</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co"> * but WITHOUT ANY WARRANTY; without even the implied warranty of</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="co"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="co"> * GNU Affero General Public License for more details.</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="co"> * You should have received a copy of the GNU Affero General Public License</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a><span class="co"> * along with this program.  If not, see </span><span class="kw">&lt;https:</span><span class="ot">//www.gnu.org/licenses</span><span class="kw">/&gt;</span><span class="co">.</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@contact:</span><span class="co"> rsdoiel</span><span class="an">@gmail.com</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@issues:</span><span class="co"> https://github.com/rsdoiel/commonMarkDoc/issues</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a><span class="co"> * includeTextBlock.ts is a package implementing the `</span><span class="an">@include-text-block`</span><span class="co"> extension to</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="co"> * CommonMark markup.</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a><span class="co"> */</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a><span class="co">/**</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a><span class="co"> * includeTextBlock takes a text string and replaces the code blocks</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a><span class="co"> * based on the file path included in the line and the langauge name</span></span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a><span class="co"> * The generate code block uses the `~~~` sequence to delimit the block</span></span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a><span class="co"> * with the language name provided in the opening delimiter.</span></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a><span class="co"> *</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@param</span><span class="co"> </span><span class="cv">text:string</span><span class="co"> to be transformed</span></span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@returns</span><span class="co"> the transformed text as a string</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a><span class="co"> */</span></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a><span class="im">export</span> <span class="kw">function</span> <span class="fu">includeTextBlock</span>(text<span class="op">:</span> <span class="dt">string</span>)<span class="op">:</span> <span class="dt">string</span> {</span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Find the include-text-block directive in the page.</span></span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> insertBlockRegExp<span class="op">:</span><span class="bu">RegExp</span> <span class="op">=</span> <span class="ss">/@include-text-block</span><span class="sc">\s+([^\s]+)(?</span><span class="ss">:</span><span class="sc">\s+(\w+))?</span><span class="ss">/g</span><span class="op">;</span></span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Insert the code blocks</span></span>
+<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> text<span class="op">.</span><span class="fu">replace</span>(insertBlockRegExp<span class="op">,</span> replaceTextBlock)<span class="op">;</span></span>
+<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a><span class="co">// replaceTextBlock does that actual replacement work with the result</span></span>
+<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a><span class="co">// of the matched RegExp.</span></span>
+<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> <span class="fu">replaceTextBlock</span>(_fullMatch<span class="op">:</span> <span class="dt">string</span><span class="op">,</span> filePath<span class="op">:</span><span class="dt">string</span>)<span class="op">:</span><span class="dt">string</span> {</span>
+<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> fileContent<span class="op">:</span><span class="dt">string</span> <span class="op">=</span> <span class="st">&#39;&#39;</span><span class="op">;</span></span>
+<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a>  <span class="cf">try</span> {</span>
+<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a>    fileContent <span class="op">=</span> Deno<span class="op">.</span><span class="fu">readTextFileSync</span>(filePath)<span class="op">;</span></span>
+<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">catch</span> (error) {</span>
+<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a>    <span class="bu">console</span><span class="op">.</span><span class="fu">error</span>(<span class="vs">`Error inserting block from </span><span class="sc">${</span>filePath<span class="sc">}</span><span class="vs">, </span><span class="sc">${</span>error<span class="sc">}</span><span class="vs">`</span>)<span class="op">;</span></span>
+<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (fileContent) {</span>
+<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> fileContent<span class="op">;</span></span>
+<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="vs">`@include-text-block </span><span class="sc">${</span>filePath<span class="sc">}</span><span class="vs">`</span><span class="op">;</span></span>
+<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<p>The public function handles finding the file referenced, reading it
+into a string before including it the transformed content block. Let’s
+look at the one for <code>@include-code-block</code>.</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co">/**</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co"> * commonMarkDoc is a Deno TypeScript module for working with CommonMark documents.</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co"> * Copyright (C) 2025 R. S. Doiel</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co"> * This program is free software: you can redistribute it and/or modify</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="co"> * it under the terms of the GNU Affero General Public License as published by</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co"> * the Free Software Foundation, either version 3 of the License, or</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co"> * (at your option) any later version.</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co"> * This program is distributed in the hope that it will be useful,</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="co"> * but WITHOUT ANY WARRANTY; without even the implied warranty of</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="co"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="co"> * GNU Affero General Public License for more details.</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="co"> * You should have received a copy of the GNU Affero General Public License</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="co"> * along with this program.  If not, see </span><span class="kw">&lt;https:</span><span class="ot">//www.gnu.org/licenses</span><span class="kw">/&gt;</span><span class="co">.</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@contact:</span><span class="co"> rsdoiel</span><span class="an">@gmail.com</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@issues:</span><span class="co"> https://github.com/rsdoiel/commonMarkDoc/issues</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a><span class="co"> * includeCodeBlock.js is a package implementing the `</span><span class="an">@include-code-block`</span><span class="co"> extension to</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="co"> * CommonMark markup.</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a><span class="co"> */</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a><span class="co">/**</span></span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a><span class="co"> * includeCodeBlock takes a text string and replaces the code blocks</span></span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a><span class="co"> * based on the file path included in the line and the langauge name</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a><span class="co"> * The generate code block uses the `~~~` sequence to delimit the block</span></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a><span class="co"> * with the language name provided in the opening delimiter.</span></span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a><span class="co"> *</span></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@param</span><span class="co"> </span><span class="cv">text</span><span class="co"> (string) to be transformed</span></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@returns</span><span class="co"> the transformed text as a string</span></span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a><span class="co"> */</span></span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a><span class="im">export</span> <span class="kw">function</span> <span class="fu">includeCodeBlock</span>(text<span class="op">:</span> <span class="dt">string</span>)<span class="op">:</span><span class="dt">string</span> {</span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Find the include-code-block directive in the page. </span></span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> insertBlockRegExp<span class="op">:</span> <span class="bu">RegExp</span> <span class="op">=</span> <span class="ss">/@include-code-block</span><span class="sc">\s+([^\s]+)(?</span><span class="ss">:</span><span class="sc">\s+(\w+))?</span><span class="ss">/g</span><span class="op">;</span></span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Insert the code blocks</span></span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> text<span class="op">.</span><span class="fu">replace</span>(insertBlockRegExp<span class="op">,</span> replaceCodeBlock)<span class="op">;</span></span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a><span class="co">// replaceCodeBlock does that actual replacement work with the result</span></span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a><span class="co">// of the matched RegExp.</span></span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> <span class="fu">replaceCodeBlock</span>(_fullMatch<span class="op">:</span><span class="dt">string</span><span class="op">,</span> filePath<span class="op">:</span> <span class="dt">string</span><span class="op">,</span> language<span class="op">:</span><span class="dt">string</span> <span class="op">=</span> <span class="st">&quot;&quot;</span>)<span class="op">:</span> <span class="dt">string</span> {</span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> fileContent<span class="op">:</span><span class="dt">string</span> <span class="op">=</span> Deno<span class="op">.</span><span class="fu">readTextFileSync</span>(filePath)<span class="op">;</span></span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (fileContent) {</span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="st">&quot;~~~&quot;</span> <span class="op">+</span> language <span class="op">+</span> <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span> <span class="op">+</span> fileContent <span class="op">+</span> <span class="st">&quot;</span><span class="sc">\n</span><span class="st">~~~&quot;</span><span class="op">;</span></span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a>    <span class="bu">console</span><span class="op">.</span><span class="fu">error</span>(<span class="vs">`Error inserting block from </span><span class="sc">${</span>filePath<span class="sc">}</span><span class="vs">`</span>)<span class="op">;</span></span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="vs">`@include-code-block </span><span class="sc">${</span>filePath<span class="sc">}</span><span class="vs"> </span><span class="sc">${</span>language<span class="sc">}</span><span class="vs">`</span><span class="op">;</span></span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<p>These modules are very similar. I’ve implemented them as separate
+modules because I want the option of evolving them independently. I
+don’t want to entangled the two functions unnecessarily. Keeping both
+simple in separate modules aligns with that.</p>
+<h2 id="hashtags-and-mentions">Hashtags and Mentions</h2>
+<p>The other transforms needed in the <code>process</code> method are
+extracting the Hashtags and Mentions which will be used to update the
+front matter. Both Hashtags and Mentions are similar. They have a
+prefix, “#” or “@” followed by a sequence of alphanumeric characters,
+period and underscores. Trailing periods are stripped. They should be
+kept separate in the front matter. Each plays different content
+roles.</p>
+<p>Collecting tags in the text is easy using a regular expression. I
+have to make a choice about the resulting list. One approach would just
+be list a tag each time it is encountered. This will result in repeated
+tags. That can be problematic. Instead I would like the list of tags
+returned to be a unique list. The extraction function will need a
+parameter for the source text and the prefix. It should return a list of
+unique tags. I’m going to call this function,
+<code>extractTags</code>.</p>
+<p>As I collect tags I will need an ability to merge the unique tag.
+That suggestions a merge function. That function will take one or more
+lists of tags and return a single list of unique tags. I’m going to call
+these function <code>mergeTags</code>. Both relate to tags and exist
+because of extraction. I’ll put them in a module called
+<code>extractTags.ts</code>. Here is my implementation.</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">/**</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co"> * commonMarkDoc is a Deno TypeScript module for working with CommonMark documents.</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co"> * Copyright (C) 2025 R. S. Doiel</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co"> * This program is free software: you can redistribute it and/or modify</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co"> * it under the terms of the GNU Affero General Public License as published by</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co"> * the Free Software Foundation, either version 3 of the License, or</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="co"> * (at your option) any later version.</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="co"> * This program is distributed in the hope that it will be useful,</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="co"> * but WITHOUT ANY WARRANTY; without even the implied warranty of</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="co"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="co"> * GNU Affero General Public License for more details.</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="co"> * You should have received a copy of the GNU Affero General Public License</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="co"> * along with this program.  If not, see </span><span class="kw">&lt;https:</span><span class="ot">//www.gnu.org/licenses</span><span class="kw">/&gt;</span><span class="co">.</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@contact:</span><span class="co"> rsdoiel</span><span class="an">@gmail.com</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@issues:</span><span class="co"> https://github.com/rsdoiel/commonMarkDoc/issues</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a><span class="co"> */</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a><span class="co">// Extract tags. By default it extracts HashTags. You may provide</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a><span class="co">// another prefix like &#39;@&#39; to extract @Tags.</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a><span class="im">export</span> <span class="kw">function</span> <span class="fu">extractTags</span>(text<span class="op">:</span> <span class="dt">string</span><span class="op">,</span> prefix<span class="op">:</span> <span class="dt">string</span> <span class="op">=</span> <span class="st">&quot;#&quot;</span>)<span class="op">:</span> <span class="dt">string</span>[] {</span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Regular expression to match tags based on the prefix, including alphanumeric,</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>  <span class="co">// periods, and underscores.</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> regex <span class="op">=</span> <span class="kw">new</span> <span class="bu">RegExp</span>(<span class="vs">`</span><span class="sc">${</span>prefix<span class="sc">}</span><span class="vs">[</span><span class="sc">\\</span><span class="vs">w.]+`</span><span class="op">,</span> <span class="st">&quot;g&quot;</span>)<span class="op">;</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>  <span class="co">//const regex = new RegExp(`${prefix}[\\w.]+?(?=\\s|$|[^\\w.])`, &#39;g&#39;);</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> tags <span class="op">=</span> text<span class="op">.</span><span class="fu">match</span>(regex)<span class="op">;</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (tags <span class="op">===</span> <span class="kw">null</span>) {</span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> []<span class="op">;</span></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Further process the tags to remove any trailing periods</span></span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> tags<span class="op">.</span><span class="fu">map</span>((tag) <span class="kw">=&gt;</span> tag<span class="op">.</span><span class="fu">replace</span>(<span class="ss">/</span><span class="sc">\.$</span><span class="ss">/</span><span class="op">,</span> <span class="st">&quot;&quot;</span>))<span class="op">;</span></span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a><span class="im">export</span> <span class="kw">function</span> <span class="fu">mergeTags</span>(<span class="op">...</span>tagLists<span class="op">:</span> <span class="dt">string</span>[][])<span class="op">:</span> <span class="dt">string</span>[] {</span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Use a Set to automatically handle uniqueness</span></span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> uniqueTags <span class="op">=</span> <span class="kw">new</span> <span class="bu">Set</span><span class="op">&lt;</span><span class="dt">string</span><span class="op">&gt;</span>()<span class="op">;</span></span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Iterate over each list of tags</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>  tagLists<span class="op">.</span><span class="fu">forEach</span>((tagList) <span class="kw">=&gt;</span> {</span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Add each tag to the Set</span></span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>    tagList<span class="op">.</span><span class="fu">forEach</span>((tag) <span class="kw">=&gt;</span> uniqueTags<span class="op">.</span><span class="fu">add</span>(tag))<span class="op">;</span></span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>  })<span class="op">;</span></span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Convert the Set back to an array and return it</span></span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="bu">Array</span><span class="op">.</span><span class="fu">from</span>(uniqueTags)<span class="op">;</span></span>
+<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<h2 id="the-process-method">The <code>process</code> method</h2>
+<p>I have the set of transforms I want. I will need to sequence them in
+the <code>process</code> method. Here is a look at the internals of the
+<code>process</code> method.</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="co">// Process uses the existing CommonMark object to create a new one transforming the front matter</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co">// and content accordingly. E.g. handling HashTags, @Tags, `@include-code-block`.</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co">//</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="co">// </span><span class="al">NOTE</span><span class="co">: This function uses a synchonous read to include content for code blocks. If have a slow disk</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">// access or lots of included code blocks this will raise the execution time of this method.</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co">//</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co">// If a code block can&#39;t be read it will leave the `@include-code-block` text in place.</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="bu">process</span>() {</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Clone a copy of this object.</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> cmark<span class="op">:</span> CommonMarkDoc <span class="op">=</span> <span class="kw">new</span> <span class="bu">Object</span>(<span class="kw">this</span>) <span class="im">as</span> CommonMarkDoc<span class="op">;</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Handle included text blocks</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>  cmark<span class="op">.</span><span class="at">content</span> <span class="op">=</span> <span class="fu">includeTextBlock</span>(cmark<span class="op">.</span><span class="at">content</span>)<span class="op">;</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Extract any HashTags from content</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> hashTags<span class="op">:</span> <span class="dt">string</span>[] <span class="op">=</span> <span class="fu">extractTags</span>(cmark<span class="op">.</span><span class="at">content</span><span class="op">,</span> <span class="st">&quot;#&quot;</span>)<span class="op">;</span></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> atTags<span class="op">:</span> <span class="dt">string</span>[] <span class="op">=</span> <span class="fu">extractTags</span>(cmark<span class="op">.</span><span class="at">content</span><span class="op">,</span> <span class="st">&quot;@&quot;</span>)<span class="op">;</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Process our HashTags adding them to our keywords list</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (</span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">hashTags</span> <span class="op">===</span> <span class="kw">undefined</span> <span class="op">||</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">hashTags</span> <span class="op">===</span> <span class="kw">null</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>  ) {</span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>    cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">hashTags</span> <span class="op">=</span> []<span class="op">;</span></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>  cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">hashTags</span> <span class="op">=</span> <span class="fu">mergeTags</span>(cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">hashTags</span> <span class="im">as</span> <span class="dt">string</span>[]<span class="op">,</span> hashTags)<span class="op">;</span></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Process our @Tags and add them to an AtTag list.</span></span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (</span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>    cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">atTags</span> <span class="op">===</span> <span class="kw">undefined</span> <span class="op">||</span></span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>    cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">atTags</span> <span class="op">===</span> <span class="kw">null</span></span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>  ) {</span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>    cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">atTags</span> <span class="op">=</span> []<span class="op">;</span></span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>  cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">atTags</span> <span class="op">=</span> <span class="fu">mergeTags</span>(cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">atTags</span> <span class="im">as</span> <span class="dt">string</span>[]<span class="op">,</span> atTags)<span class="op">;</span></span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Handle include code blocks</span></span>
+<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a>  cmark<span class="op">.</span><span class="at">content</span> <span class="op">=</span> <span class="fu">includeCodeBlock</span>(cmark<span class="op">.</span><span class="at">content</span>)<span class="op">;</span></span>
+<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a>  <span class="co">// We can now return the revised object.</span></span>
+<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> cmark<span class="op">;</span></span>
+<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<p>To use the the transform functions in the <code>process</code> method
+I need to import them.</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { extractTags<span class="op">,</span> mergeTags } <span class="im">from</span> <span class="st">&quot;./extractTags.ts&quot;</span><span class="op">;</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { includeCodeBlock } <span class="im">from</span> <span class="st">&quot;./includeCodeBlock.ts&quot;</span><span class="op">;</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { includeTextBlock } <span class="im">from</span> <span class="st">&quot;./includeTextBlock.ts&quot;</span><span class="op">;</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span></code></pre></div>
+<h2 id="the-complete-commonmark-processor-module">The complete
+CommonMark processor module</h2>
+<p>Here is the complete <code>commonMarkDoc.ts</code> module.</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> <span class="op">*</span> <span class="im">as</span> yaml <span class="im">from</span> <span class="st">&quot;@std/yaml&quot;</span><span class="op">;</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { extractTags<span class="op">,</span> mergeTags } <span class="im">from</span> <span class="st">&quot;./extractTags.ts&quot;</span><span class="op">;</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { includeCodeBlock } <span class="im">from</span> <span class="st">&quot;./includeCodeBlock.ts&quot;</span><span class="op">;</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { includeTextBlock } <span class="im">from</span> <span class="st">&quot;./includeTextBlock.ts&quot;</span><span class="op">;</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="im">export</span> <span class="kw">class</span> CommonMarkDoc {</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>  frontMatter<span class="op">:</span> <span class="bu">Record</span><span class="op">&lt;</span><span class="dt">string</span><span class="op">,</span> <span class="dt">unknown</span><span class="op">&gt;</span> <span class="op">=</span> {}<span class="op">;</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>  content<span class="op">:</span> <span class="dt">string</span> <span class="op">=</span> <span class="st">&quot;&quot;</span><span class="op">;</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Parse a CommonMark or Markdown document into content and front matter</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">parse</span>(text<span class="op">:</span> <span class="dt">string</span>) {</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> frontMatterRegex<span class="op">:</span> <span class="bu">RegExp</span> <span class="op">=</span> <span class="ss">/</span><span class="sc">^</span><span class="ss">---</span><span class="sc">([\s\S]+?)</span><span class="ss">---/</span><span class="op">;</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> match<span class="op">:</span> <span class="bu">Array</span><span class="op">&lt;</span><span class="dt">string</span><span class="op">&gt;</span> <span class="op">|</span> <span class="dt">null</span> <span class="op">=</span> text<span class="op">.</span><span class="fu">match</span>(frontMatterRegex) <span class="im">as</span> <span class="bu">Array</span><span class="op">&lt;</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>      string</span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">&gt;;</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (match) {</span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>      <span class="kw">this</span><span class="op">.</span><span class="at">frontMatter</span> <span class="op">=</span> yaml<span class="op">.</span><span class="fu">parse</span>(match[<span class="dv">1</span>]) <span class="im">as</span> <span class="bu">Record</span><span class="op">&lt;</span><span class="dt">string</span><span class="op">,</span> <span class="dt">unknown</span><span class="op">&gt;;</span></span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a>      <span class="kw">this</span><span class="op">.</span><span class="at">content</span> <span class="op">=</span> text<span class="op">.</span><span class="fu">slice</span>(match[<span class="dv">0</span>]<span class="op">.</span><span class="at">length</span>)<span class="op">.</span><span class="fu">trim</span>()<span class="op">;</span></span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>      <span class="kw">this</span><span class="op">.</span><span class="at">frontMatter</span> <span class="op">=</span> {}<span class="op">;</span></span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a>      <span class="kw">this</span><span class="op">.</span><span class="at">content</span> <span class="op">=</span> text<span class="op">;</span></span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Return this object as a CommonMark document with front matter and content.</span></span>
+<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stringify</span>()<span class="op">:</span> <span class="dt">string</span> {</span>
+<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="bu">Object</span><span class="op">.</span><span class="fu">keys</span>(<span class="kw">this</span><span class="op">.</span><span class="at">frontMatter</span>)<span class="op">.</span><span class="at">length</span> <span class="op">&gt;</span> <span class="dv">0</span>) {</span>
+<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> <span class="vs">`---</span></span>
+<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a><span class="sc">${</span>yaml<span class="op">.</span><span class="fu">stringify</span>(<span class="kw">this</span><span class="op">.</span><span class="at">frontMatter</span>)<span class="sc">}</span><span class="vs">---</span></span>
+<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a><span class="sc">${</span><span class="kw">this</span><span class="op">.</span><span class="at">content</span><span class="sc">}</span><span class="vs">`</span><span class="op">;</span></span>
+<span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb7-35"><a href="#cb7-35" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="kw">this</span><span class="op">.</span><span class="at">content</span><span class="op">;</span></span>
+<span id="cb7-36"><a href="#cb7-36" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb7-37"><a href="#cb7-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-38"><a href="#cb7-38" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Process uses the existing CommonMark object to create a new one transforming the front matter</span></span>
+<span id="cb7-39"><a href="#cb7-39" aria-hidden="true" tabindex="-1"></a>  <span class="co">// and content accordingly. E.g. handling HashTags, @Tags, `@include-code-block`.</span></span>
+<span id="cb7-40"><a href="#cb7-40" aria-hidden="true" tabindex="-1"></a>  <span class="co">//</span></span>
+<span id="cb7-41"><a href="#cb7-41" aria-hidden="true" tabindex="-1"></a>  <span class="co">// </span><span class="al">NOTE</span><span class="co">: This function uses a synchonous read to include content for code blocks. If have a slow disk</span></span>
+<span id="cb7-42"><a href="#cb7-42" aria-hidden="true" tabindex="-1"></a>  <span class="co">// access or lots of included code blocks this will raise the execution time of this method.</span></span>
+<span id="cb7-43"><a href="#cb7-43" aria-hidden="true" tabindex="-1"></a>  <span class="co">//</span></span>
+<span id="cb7-44"><a href="#cb7-44" aria-hidden="true" tabindex="-1"></a>  <span class="co">// If a code block can&#39;t be read it will leave the `@include-code-block` text in place.</span></span>
+<span id="cb7-45"><a href="#cb7-45" aria-hidden="true" tabindex="-1"></a>  <span class="bu">process</span>() {</span>
+<span id="cb7-46"><a href="#cb7-46" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Clone a copy of this object.</span></span>
+<span id="cb7-47"><a href="#cb7-47" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> cmark<span class="op">:</span> CommonMarkDoc <span class="op">=</span> <span class="kw">new</span> <span class="bu">Object</span>(<span class="kw">this</span>) <span class="im">as</span> CommonMarkDoc<span class="op">;</span></span>
+<span id="cb7-48"><a href="#cb7-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-49"><a href="#cb7-49" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Handle included text blocks</span></span>
+<span id="cb7-50"><a href="#cb7-50" aria-hidden="true" tabindex="-1"></a>    cmark<span class="op">.</span><span class="at">content</span> <span class="op">=</span> <span class="fu">includeTextBlock</span>(cmark<span class="op">.</span><span class="at">content</span>)<span class="op">;</span></span>
+<span id="cb7-51"><a href="#cb7-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-52"><a href="#cb7-52" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Extract any HashTags from content</span></span>
+<span id="cb7-53"><a href="#cb7-53" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> hashTags<span class="op">:</span> <span class="dt">string</span>[] <span class="op">=</span> <span class="fu">extractTags</span>(cmark<span class="op">.</span><span class="at">content</span><span class="op">,</span> <span class="st">&quot;#&quot;</span>)<span class="op">;</span></span>
+<span id="cb7-54"><a href="#cb7-54" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> atTags<span class="op">:</span> <span class="dt">string</span>[] <span class="op">=</span> <span class="fu">extractTags</span>(cmark<span class="op">.</span><span class="at">content</span><span class="op">,</span> <span class="st">&quot;@&quot;</span>)<span class="op">;</span></span>
+<span id="cb7-55"><a href="#cb7-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-56"><a href="#cb7-56" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Process our HashTags adding them to our keywords list</span></span>
+<span id="cb7-57"><a href="#cb7-57" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (</span>
+<span id="cb7-58"><a href="#cb7-58" aria-hidden="true" tabindex="-1"></a>      cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">hashTags</span> <span class="op">===</span> <span class="kw">undefined</span> <span class="op">||</span></span>
+<span id="cb7-59"><a href="#cb7-59" aria-hidden="true" tabindex="-1"></a>      cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">hashTags</span> <span class="op">===</span> <span class="kw">null</span></span>
+<span id="cb7-60"><a href="#cb7-60" aria-hidden="true" tabindex="-1"></a>    ) {</span>
+<span id="cb7-61"><a href="#cb7-61" aria-hidden="true" tabindex="-1"></a>      cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">hashTags</span> <span class="op">=</span> []<span class="op">;</span></span>
+<span id="cb7-62"><a href="#cb7-62" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb7-63"><a href="#cb7-63" aria-hidden="true" tabindex="-1"></a>    cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">hashTags</span> <span class="op">=</span> <span class="fu">mergeTags</span>(cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">hashTags</span> <span class="im">as</span> <span class="dt">string</span>[]<span class="op">,</span> hashTags)<span class="op">;</span></span>
+<span id="cb7-64"><a href="#cb7-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-65"><a href="#cb7-65" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Process our @Tags and add them to an AtTag list.</span></span>
+<span id="cb7-66"><a href="#cb7-66" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (</span>
+<span id="cb7-67"><a href="#cb7-67" aria-hidden="true" tabindex="-1"></a>      cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">atTags</span> <span class="op">===</span> <span class="kw">undefined</span> <span class="op">||</span></span>
+<span id="cb7-68"><a href="#cb7-68" aria-hidden="true" tabindex="-1"></a>      cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">atTags</span> <span class="op">===</span> <span class="kw">null</span></span>
+<span id="cb7-69"><a href="#cb7-69" aria-hidden="true" tabindex="-1"></a>    ) {</span>
+<span id="cb7-70"><a href="#cb7-70" aria-hidden="true" tabindex="-1"></a>      cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">atTags</span> <span class="op">=</span> []<span class="op">;</span></span>
+<span id="cb7-71"><a href="#cb7-71" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb7-72"><a href="#cb7-72" aria-hidden="true" tabindex="-1"></a>    cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">atTags</span> <span class="op">=</span> <span class="fu">mergeTags</span>(cmark<span class="op">.</span><span class="at">frontMatter</span><span class="op">.</span><span class="at">atTags</span> <span class="im">as</span> <span class="dt">string</span>[]<span class="op">,</span> atTags)<span class="op">;</span></span>
+<span id="cb7-73"><a href="#cb7-73" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-74"><a href="#cb7-74" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Handle include code blocks</span></span>
+<span id="cb7-75"><a href="#cb7-75" aria-hidden="true" tabindex="-1"></a>    cmark<span class="op">.</span><span class="at">content</span> <span class="op">=</span> <span class="fu">includeCodeBlock</span>(cmark<span class="op">.</span><span class="at">content</span>)<span class="op">;</span></span>
+<span id="cb7-76"><a href="#cb7-76" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-77"><a href="#cb7-77" aria-hidden="true" tabindex="-1"></a>    <span class="co">// We can now return the revised object.</span></span>
+<span id="cb7-78"><a href="#cb7-78" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> cmark<span class="op">;</span></span>
+<span id="cb7-79"><a href="#cb7-79" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb7-80"><a href="#cb7-80" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<h2 id="the-commonmark-processor-application">The CommonMark processor
+application</h2>
+<p>To use this module I need to wrap it so I can execute it from the
+command line. My processor is going to be called
+<code>cmarkprocess</code> so I’ll name the module that becomes the
+command line program is <code>cmarkprocess.ts</code>. This module will
+include a “main” function, that function will handle command line
+options and parameters as well as read data from either standard input
+or a file. It’ll use the <code>CommonMarkDoc</code> <code>process</code>
+method and write the results to standard out.</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">/**</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="co"> * commonMarkDoc is a Deno TypeScript module for working with CommonMark documents.</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="co"> * Copyright (C) 2025 R. S. Doiel</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="co"> * This program is free software: you can redistribute it and/or modify</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="co"> * it under the terms of the GNU Affero General Public License as published by</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="co"> * the Free Software Foundation, either version 3 of the License, or</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="co"> * (at your option) any later version.</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="co"> * This program is distributed in the hope that it will be useful,</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="co"> * but WITHOUT ANY WARRANTY; without even the implied warranty of</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="co"> * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="co"> * GNU Affero General Public License for more details.</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a><span class="co"> * You should have received a copy of the GNU Affero General Public License</span></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a><span class="co"> * along with this program.  If not, see </span><span class="kw">&lt;https:</span><span class="ot">//www.gnu.org/licenses</span><span class="kw">/&gt;</span><span class="co">.</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@contact:</span><span class="co"> rsdoiel</span><span class="an">@gmail.com</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span><span class="an">@issues:</span><span class="co"> https://github.com/rsdoiel/commonMarkDoc/issues</span></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a><span class="co"> * </span></span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a><span class="co"> */</span></span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> <span class="op">*</span> <span class="im">as</span> yaml <span class="im">from</span> <span class="st">&quot;@std/yaml&quot;</span><span class="op">;</span></span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { parse <span class="im">as</span> parseArgs } <span class="im">from</span> <span class="st">&quot;@std/flags&quot;</span><span class="op">;</span></span>
+<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { licenseText<span class="op">,</span> releaseDate<span class="op">,</span> releaseHash<span class="op">,</span> version } <span class="im">from</span> <span class="st">&quot;./version.ts&quot;</span><span class="op">;</span></span>
+<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { fmtHelp<span class="op">,</span> helpText } <span class="im">from</span> <span class="st">&quot;./helptext.ts&quot;</span><span class="op">;</span></span>
+<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-29"><a href="#cb8-29" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { extractTags<span class="op">,</span> mergeTags } <span class="im">from</span> <span class="st">&quot;./src/extractTags.ts&quot;</span><span class="op">;</span></span>
+<span id="cb8-30"><a href="#cb8-30" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { includeCodeBlock } <span class="im">from</span> <span class="st">&quot;./src/includeCodeBlock.ts&quot;</span><span class="op">;</span></span>
+<span id="cb8-31"><a href="#cb8-31" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { includeTextBlock } <span class="im">from</span> <span class="st">&quot;./src/includeTextBlock.ts&quot;</span><span class="op">;</span></span>
+<span id="cb8-32"><a href="#cb8-32" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { CommonMarkDoc } <span class="im">from</span> <span class="st">&quot;./src/commonMarkDoc.ts&quot;</span><span class="op">;</span></span>
+<span id="cb8-33"><a href="#cb8-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-34"><a href="#cb8-34" aria-hidden="true" tabindex="-1"></a><span class="co">// Export the main CommonMarkDoc object</span></span>
+<span id="cb8-35"><a href="#cb8-35" aria-hidden="true" tabindex="-1"></a><span class="im">export</span> { CommonMarkDoc } <span class="im">from</span> <span class="st">&quot;./src/commonMarkDoc.ts&quot;</span><span class="op">;</span></span>
+<span id="cb8-36"><a href="#cb8-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-37"><a href="#cb8-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-38"><a href="#cb8-38" aria-hidden="true" tabindex="-1"></a><span class="co">// main implements a light weight CommonMark processor</span></span>
+<span id="cb8-39"><a href="#cb8-39" aria-hidden="true" tabindex="-1"></a><span class="co">// called `cmarkprocess`. It demonstrates the features of the</span></span>
+<span id="cb8-40"><a href="#cb8-40" aria-hidden="true" tabindex="-1"></a><span class="co">// CommonMarkDoc module.</span></span>
+<span id="cb8-41"><a href="#cb8-41" aria-hidden="true" tabindex="-1"></a><span class="kw">async</span> <span class="kw">function</span> <span class="fu">main</span>() {</span>
+<span id="cb8-42"><a href="#cb8-42" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> appName <span class="op">=</span> <span class="st">&quot;cmarkprocess&quot;</span><span class="op">;</span></span>
+<span id="cb8-43"><a href="#cb8-43" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> args <span class="op">=</span> <span class="fu">parseArgs</span>(Deno<span class="op">.</span><span class="at">args</span><span class="op">,</span> {</span>
+<span id="cb8-44"><a href="#cb8-44" aria-hidden="true" tabindex="-1"></a>    boolean<span class="op">:</span> [<span class="st">&quot;help&quot;</span><span class="op">,</span> <span class="st">&quot;version&quot;</span><span class="op">,</span> <span class="st">&quot;license&quot;</span>]<span class="op">,</span></span>
+<span id="cb8-45"><a href="#cb8-45" aria-hidden="true" tabindex="-1"></a>    alias<span class="op">:</span> {</span>
+<span id="cb8-46"><a href="#cb8-46" aria-hidden="true" tabindex="-1"></a>      h<span class="op">:</span> <span class="st">&quot;help&quot;</span><span class="op">,</span></span>
+<span id="cb8-47"><a href="#cb8-47" aria-hidden="true" tabindex="-1"></a>      v<span class="op">:</span> <span class="st">&quot;version&quot;</span><span class="op">,</span></span>
+<span id="cb8-48"><a href="#cb8-48" aria-hidden="true" tabindex="-1"></a>      l<span class="op">:</span> <span class="st">&quot;license&quot;</span><span class="op">,</span></span>
+<span id="cb8-49"><a href="#cb8-49" aria-hidden="true" tabindex="-1"></a>    }<span class="op">,</span></span>
+<span id="cb8-50"><a href="#cb8-50" aria-hidden="true" tabindex="-1"></a>  })<span class="op">;</span></span>
+<span id="cb8-51"><a href="#cb8-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-52"><a href="#cb8-52" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (args<span class="op">.</span><span class="at">help</span>) {</span>
+<span id="cb8-53"><a href="#cb8-53" aria-hidden="true" tabindex="-1"></a>    <span class="bu">console</span><span class="op">.</span><span class="fu">log</span>(<span class="fu">fmtHelp</span>(helpText<span class="op">,</span> appName<span class="op">,</span> version<span class="op">,</span> releaseDate<span class="op">,</span> releaseHash))<span class="op">;</span></span>
+<span id="cb8-54"><a href="#cb8-54" aria-hidden="true" tabindex="-1"></a>    Deno<span class="op">.</span><span class="fu">exit</span>(<span class="dv">0</span>)<span class="op">;</span></span>
+<span id="cb8-55"><a href="#cb8-55" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb8-56"><a href="#cb8-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-57"><a href="#cb8-57" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (args<span class="op">.</span><span class="at">version</span>) {</span>
+<span id="cb8-58"><a href="#cb8-58" aria-hidden="true" tabindex="-1"></a>    <span class="bu">console</span><span class="op">.</span><span class="fu">log</span>(<span class="vs">`</span><span class="sc">${</span>appName<span class="sc">}</span><span class="vs"> </span><span class="sc">${</span>version<span class="sc">}</span><span class="vs"> </span><span class="sc">${</span>releaseHash<span class="sc">}</span><span class="vs">`</span>)<span class="op">;</span></span>
+<span id="cb8-59"><a href="#cb8-59" aria-hidden="true" tabindex="-1"></a>    Deno<span class="op">.</span><span class="fu">exit</span>(<span class="dv">0</span>)<span class="op">;</span></span>
+<span id="cb8-60"><a href="#cb8-60" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb8-61"><a href="#cb8-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-62"><a href="#cb8-62" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (args<span class="op">.</span><span class="at">license</span>) {</span>
+<span id="cb8-63"><a href="#cb8-63" aria-hidden="true" tabindex="-1"></a>    <span class="bu">console</span><span class="op">.</span><span class="fu">log</span>(licenseText)<span class="op">;</span></span>
+<span id="cb8-64"><a href="#cb8-64" aria-hidden="true" tabindex="-1"></a>    Deno<span class="op">.</span><span class="fu">exit</span>(<span class="dv">0</span>)<span class="op">;</span></span>
+<span id="cb8-65"><a href="#cb8-65" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb8-66"><a href="#cb8-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-67"><a href="#cb8-67" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> cmark <span class="op">=</span> <span class="kw">new</span> <span class="fu">CommonMarkDoc</span>()<span class="op">;</span></span>
+<span id="cb8-68"><a href="#cb8-68" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> filePath <span class="op">=</span> args<span class="op">.</span><span class="at">_</span>[<span class="dv">0</span>] <span class="im">as</span> <span class="dt">string</span><span class="op">;</span></span>
+<span id="cb8-69"><a href="#cb8-69" aria-hidden="true" tabindex="-1"></a>  <span class="kw">let</span> text<span class="op">:</span> <span class="dt">string</span> <span class="op">=</span> <span class="st">&quot;&quot;</span><span class="op">;</span></span>
+<span id="cb8-70"><a href="#cb8-70" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (args<span class="op">.</span><span class="at">_</span><span class="op">.</span><span class="at">length</span> <span class="op">===</span> <span class="dv">0</span>) {</span>
+<span id="cb8-71"><a href="#cb8-71" aria-hidden="true" tabindex="-1"></a>    <span class="kw">const</span> decoder <span class="op">=</span> <span class="kw">new</span> <span class="fu">TextDecoder</span>()<span class="op">;</span></span>
+<span id="cb8-72"><a href="#cb8-72" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="cf">await</span> (<span class="kw">const</span> chunk <span class="kw">of</span> Deno<span class="op">.</span><span class="at">stdin</span><span class="op">.</span><span class="at">readable</span>) {</span>
+<span id="cb8-73"><a href="#cb8-73" aria-hidden="true" tabindex="-1"></a>      text <span class="op">+=</span> decoder<span class="op">.</span><span class="fu">decode</span>(chunk)<span class="op">;</span></span>
+<span id="cb8-74"><a href="#cb8-74" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb8-75"><a href="#cb8-75" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb8-76"><a href="#cb8-76" aria-hidden="true" tabindex="-1"></a>    text <span class="op">=</span> <span class="cf">await</span> Deno<span class="op">.</span><span class="fu">readTextFile</span>(filePath)<span class="op">;</span></span>
+<span id="cb8-77"><a href="#cb8-77" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb8-78"><a href="#cb8-78" aria-hidden="true" tabindex="-1"></a>  cmark<span class="op">.</span><span class="fu">parse</span>(text)<span class="op">;</span></span>
+<span id="cb8-79"><a href="#cb8-79" aria-hidden="true" tabindex="-1"></a>  <span class="cf">try</span> {</span>
+<span id="cb8-80"><a href="#cb8-80" aria-hidden="true" tabindex="-1"></a>    <span class="cf">await</span> cmark<span class="op">.</span><span class="fu">process</span>()<span class="op">;</span></span>
+<span id="cb8-81"><a href="#cb8-81" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">catch</span> (error) {</span>
+<span id="cb8-82"><a href="#cb8-82" aria-hidden="true" tabindex="-1"></a>    <span class="bu">console</span><span class="op">.</span><span class="fu">error</span>(<span class="vs">`ERROR (</span><span class="sc">${</span>filePath<span class="sc">}</span><span class="vs">): </span><span class="sc">${</span>error<span class="sc">}</span><span class="vs">`</span>)<span class="op">;</span></span>
+<span id="cb8-83"><a href="#cb8-83" aria-hidden="true" tabindex="-1"></a>    Deno<span class="op">.</span><span class="fu">exit</span>(<span class="dv">1</span>)<span class="op">;</span></span>
+<span id="cb8-84"><a href="#cb8-84" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb8-85"><a href="#cb8-85" aria-hidden="true" tabindex="-1"></a>  <span class="kw">const</span> output <span class="op">=</span> cmark<span class="op">.</span><span class="fu">stringify</span>()<span class="op">;</span></span>
+<span id="cb8-86"><a href="#cb8-86" aria-hidden="true" tabindex="-1"></a>  <span class="bu">console</span><span class="op">.</span><span class="fu">log</span>(output)<span class="op">;</span></span>
+<span id="cb8-87"><a href="#cb8-87" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb8-88"><a href="#cb8-88" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-89"><a href="#cb8-89" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (import<span class="op">.</span><span class="at">meta</span><span class="op">.</span><span class="at">main</span>) {</span>
+<span id="cb8-90"><a href="#cb8-90" aria-hidden="true" tabindex="-1"></a>  <span class="cf">await</span> <span class="fu">main</span>()<span class="op">;</span></span>
+<span id="cb8-91"><a href="#cb8-91" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<p>Now that we have our wrapping modules, how do I get a nice executable
+using Deno?</p>
+<pre class="shell"><code>deno compile --allow-read -o bin/cmarkprocess cmarkprocess.ts</code></pre>
+<p>The result is an executable, <code>bin/cmarkprocess</code>. This
+executable can read from standard input or from a file path. It will
+write to standard output.</p>
+</section>
+</body>
+</html>
