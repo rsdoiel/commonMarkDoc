@@ -15,8 +15,8 @@ keywords:
   - CommonMark
   - Markdown
   - Front Matter
-dateCreated: '2025-07-28'
-dateModified: '2025-07-28'
+dateCreated: 2025-07-26T00:00:00.000Z
+dateModified: 2025-07-28T00:00:00.000Z
 datePublished: 2025-07-26T00:00:00.000Z
 author: R. S. Doiel
 copyrightYear: 2025
